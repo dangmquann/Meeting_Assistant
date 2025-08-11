@@ -1,3 +1,4 @@
+import os
 import openai
 from docx import Document
 import time
@@ -8,7 +9,7 @@ import json
 
 client = OpenAI(
     # defaults to os.environ.get("OPENAI_API_KEY")
-    api_key="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",
+    api_key=os.getenv('OPENAI_API_KEY', ''),
 )
 
 def transcribe_audio(audio_file_path):

@@ -39,7 +39,7 @@ def speaker_diarization(audio_file):
     Perform speaker diarization on the given audio file.
     """
     # Initialize Deepgram client
-    deepgram = DeepgramClient(api_key="40b0ee1c693850eb77945a13526e00f51037deec")
+    deepgram = DeepgramClient(api_key="YOUR_DEEPGRAM_API_KEY")
 
     print("Reading audio file...")
     with open(audio_file, 'rb') as f:
