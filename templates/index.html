@@ -8,8 +8,19 @@
         <p id="status">Connection status will go here</p>
         <p id="transcript"></p>
 
+        <table id="transcript-table" border="1" style="margin-top:20px; border-collapse:collapse;">
+            <thead>
+                <tr>
+                    <th>Start</th>
+                    <th>Speaker</th>
+                    <th>Transcript</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
         <script>
-               navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
             if (!MediaRecorder.isTypeSupported('audio/webm'))
                 return alert('Browser not supported')
 
@@ -17,7 +28,7 @@
                 mimeType: 'audio/webm',
             })
 
-            const socket = new WebSocket('ws://localhost:8000/listen')
+            const socket = new WebSocket('ws://localhost:8000/meeting')
 
             socket.onopen = () => {
                 document.querySelector('#status').textContent = 'Connected'
@@ -26,27 +37,33 @@
                     if (event.data.size > 0 && socket.readyState == 1) {
                         socket.send(event.data)
                     }
-            })
-            mediaRecorder.start(250)
+                })
+                mediaRecorder.start(250)
             }
 
             socket.onmessage = (message) => {
-                const received = message.data
-                if (received) {
-                    console.log(received)
+                let received = message.data
+                try {
+                    const data = JSON.parse(received)
+                    // Append to table
+                    const tbody = document.querySelector('#transcript-table tbody')
+                    const row = document.createElement('tr')
+                    row.innerHTML = `<td>${data.start}</td><td>${data.speaker}</td><td>${data.transcript}</td>`
+                    tbody.appendChild(row)
+                } catch (e) {
+                    // fallback: just append raw text
                     document.querySelector('#transcript').textContent += ' ' + received
                 }
-           }
+            }
 
-           socket.onclose = () => {
-            console.log({ event: 'onclose' })
-        }
+            socket.onclose = () => {
+                console.log({ event: 'onclose' })
+            }
 
             socket.onerror = (error) => {
                 console.log({ event: 'onerror', error })
             }
-
-           })
+        })
         </script>
     </body>
 </html>
