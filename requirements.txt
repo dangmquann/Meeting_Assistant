@@ -19,3 +19,5 @@ beautifulsoup4>=4.12.3
 datasets>=2.21.0
 litellm==1.63.3
 soundfile
+deepgram-sdk==0.2.4
+docx
