@@ -1,5 +1,5 @@
 # Meeting_Assistant
-
+![Meeting Assistant](./images/meeting_assistant.png)
 ## Features
 
 - **Live Speech-to-Text**: Real-time transcription of meeting audio via browser microphone.
