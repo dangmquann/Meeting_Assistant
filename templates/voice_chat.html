@@ -60,6 +60,7 @@
         <span id="connection-status">Disconnected</span>
       </div>
       <button id="connect-btn">Connect</button>
+      <button id="disconnect-btn" disabled>Disconnect</button>
       <button id="record-btn" disabled>Start Recording</button>
       <span class="status" id="status-text">Please connect first</span>
     </div>
@@ -76,6 +77,7 @@
     const modelSelect = document.getElementById('model');
     const voiceSelect = document.getElementById('voice');
     const connectBtn = document.getElementById('connect-btn');
+    const disconnectBtn = document.getElementById('disconnect-btn');
     const recordBtn = document.getElementById('record-btn');
     const statusText = document.getElementById('status-text');
     const conversationDiv = document.getElementById('conversation');
@@ -179,6 +181,7 @@
           statusText.textContent = 'Connected';
           recordBtn.disabled = false;
           connectBtn.disabled = true;
+          disconnectBtn.disabled = false;
           statusIndicator.className = 'status-indicator status-connected';
           connectionStatus.textContent = 'Connected';
           addSystemMessage('Connected. Session ID: ' + sessionId);
@@ -232,11 +235,62 @@
         case 'params_updated':
           statusText.textContent = 'Parameters updated';
           break;
+        
+        case 'conversation_saved':
+            statusText.textContent = 'Conversation saved';
+            addSystemMessage(`${data.message || 'Conversation saved'} (${data.filename || ''})`);
+            break;
+
+        case 'disconnect_ack':
+            statusText.textContent = 'Session ended';
+            addSystemMessage(data.message || 'Session ended');
+            break;
 
         default:
           console.log('Unhandled message type:', data.type);
       }
     }
+
+    // ==== Disconnect ====
+    disconnectBtn.addEventListener('click', () => {
+    disconnectSession();
+    });
+
+    // Add disconnect function
+    function disconnectSession() {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        // Stop recording if active
+        if (isRecording) {
+        stopRecording();
+        }
+        
+        // Send explicit disconnect command
+        websocket.send(JSON.stringify({ command: 'disconnect' }));
+        
+        // Update UI
+        statusText.textContent = 'Disconnecting...';
+        
+        // Give server time to process disconnect and save conversation
+        setTimeout(() => {
+        websocket.close();
+        updateUIForDisconnect();
+        }, 1000);
+    } else {
+        updateUIForDisconnect();
+    }
+    }
+
+    // Helper to update UI on disconnect
+    function updateUIForDisconnect() {
+        connectBtn.disabled = false;
+        disconnectBtn.disabled = true;
+        recordBtn.disabled = true;
+        statusIndicator.className = 'status-indicator status-disconnected';
+        connectionStatus.textContent = 'Disconnected';
+        statusText.textContent = 'Disconnected';
+        addSystemMessage('Session disconnected. Conversation saved.');
+    }
+
 
     // ==== Recording (client mic → server) ====
     recordBtn.addEventListener('click', () => {
