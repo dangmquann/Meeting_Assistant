@@ -13,8 +13,8 @@ from starlette.websockets import WebSocketDisconnect
 
 from deepgram import DeepgramClient, LiveTranscriptionEvents
 from modules.speech.meeting.meeting_minutes import process_audio
-from modules.speech.live.live_gemini import gemini_live_stream
-from modules.speech.audio_format import save_audio_buffer_as_wav
+from modules.speech.live.live_gemini import gemini_live_stream, GeminiLiveSession
+from modules.speech.audio_format import save_audio_buffer_as_wav, convert_to_raw_pcm
 load_dotenv()
 
 app = FastAPI()
@@ -64,55 +64,6 @@ async def websocket_meeting(websocket: WebSocket):
         finally:
             await websocket.close()
 
-@app.websocket("/live")
-async def websocket_live(websocket: WebSocket):
-    await websocket.accept()
-    
-    # Generate a unique ID for this connection
-    remote_user_id = f"user_{id(websocket)}"
-    manager = None
-    
-    try:
-        print(f"New WebSocket connection: {remote_user_id}")
-        
-        # Create and initialize the Gemini session manager
-        from modules.speech.live.websocket_gemini import WebSocketGeminiManager
-        manager = WebSocketGeminiManager(remote_user_id)
-        
-        # Start the Gemini session
-        gemini_session = await manager.start_session(websocket)
-        
-        # Process incoming audio data
-        while True:
-            try:
-                # Receive binary audio data from client
-                data = await websocket.receive_bytes()
-                
-                # Process the audio data through the manager
-                success = await manager.process_audio_bytes(data)
-                if not success:
-                    print(f"Failed to process audio for {remote_user_id}")
-                    break
-                    
-            except WebSocketDisconnect:
-                print(f"WebSocket disconnected for user: {remote_user_id}")
-                break
-    
-    except Exception as e:
-        print(f"Error in live WebSocket connection: {e}")
-        
-    finally:
-        # Clean up resources
-        if manager:
-            await manager.stop_session()
-        
-        # Ensure WebSocket is closed
-        if websocket.client_state.name == 'CONNECTED':
-            await websocket.close()
-            
-        print(f"WebSocket connection closed: {remote_user_id}")
-
-
 
 
 
@@ -121,16 +72,21 @@ async def websocket_live(websocket: WebSocket):
 async def voice_chat_websocket(websocket: WebSocket):
     """WebSocket endpoint for voice chat with authentication and session management."""
     
-    # Các biến mặc định
-    # model_id = "gemini/gemini-2.0-flash"
-    # model_id = "gemini-2.5-flash-preview-native-audio-dialog"
-    model_id = "gemini-live-2.5-flash-preview"
+    model_id = "gemini-2.5-flash-preview-native-audio-dialog"
     voice = "alloy"
     session_id = None
     parent_response_id = None
     project_id = None
     current_user = None
     user_language = "en"
+
+    # 1. Khởi tạo session ngay từ đầu
+    gemini_session = GeminiLiveSession(
+        websocket,
+        model="gemini-2.5-flash-preview-native-audio-dialog",
+        session_id=str(uuid.uuid4()),  # hoặc nhận từ client
+    )
+    
 
     is_recording = False
     audio_buffer = io.BytesIO()
@@ -150,13 +106,13 @@ async def voice_chat_websocket(websocket: WebSocket):
         while True:
             message = await websocket.receive()
             
-            # binary frames
+             # ====== AUDIO FRAMES ======
             if "bytes" in message and message["bytes"] is not None:
                 if is_recording:
                     audio_buffer.write(message["bytes"])
                 continue
             
-            # Xử lý tin nhắn dạng text (JSON)
+           # ====== TEXT FRAMES (JSON) ======
             if "text" in message:
                 try:
                     data = json.loads(message["text"])
@@ -172,8 +128,23 @@ async def voice_chat_websocket(websocket: WebSocket):
                         # Save and convert audio for debugging
                         # debug_filename = save_audio_buffer_as_wav(audio_buffer)
 
+                        # is_recording = False
+                        # await gemini_live_stream(audio_buffer, websocket)
+                        await gemini_session.setup()
                         is_recording = False
-                        await gemini_live_stream(audio_buffer, websocket)
+                        audio_buffer.seek(0)
+
+                        try:
+                            processed_audio = convert_to_raw_pcm(audio_buffer)
+                            print(f"[DEBUG] PCM conversion successful. Processed audio length: {len(processed_audio)} bytes")
+                            
+                        except Exception as e:
+                            logger.warning(f"Could not convert audio, using original audio: {e}")
+                            processed_audio = audio_buffer.getvalue()
+                        print(f"[DEBUG] Final audio to be sent to Gemini: {len(processed_audio)} bytes")
+
+                        await gemini_session.send_audio(processed_audio)
+
                         await websocket.send_json({"type": "recording_stopped"})
 
                         # Reset the audio buffer for the next recording
@@ -187,6 +158,19 @@ async def voice_chat_websocket(websocket: WebSocket):
                             voice = data["voice"]
                         await websocket.send_json({"type": "params_updated"})
                     
+                    elif data.get("command") == "disconnect":
+                        logger.info(f"Client requested disconnection for session: {session_id}")
+                        await gemini_session.save_conversation()  
+                        
+                        # Send acknowledgement to client
+                        await websocket.send_json({
+                            "type": "disconnect_ack", 
+                            "message": "Session ended and conversation saved"
+                        })
+                        
+                        # End the loop to close the connection
+                        break
+                    
                 except json.JSONDecodeError:
                     await websocket.send_json({"type": "error", "message": "Invalid JSON message"})
     
@@ -198,3 +182,7 @@ async def voice_chat_websocket(websocket: WebSocket):
             await websocket.close(code=1011, reason="Server error")
         except:
             pass
+    finally:
+        # Đảm bảo đóng websocket khi kết thúc
+        if websocket.client_state.name == 'CONNECTED':
+            await websocket.close()

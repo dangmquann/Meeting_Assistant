@@ -1,2 +1,7 @@
 .env
 __pycache__/
+
+
+# Ignore credential files in the payment directory
+credentials/*.p12
+credentials/*.json
