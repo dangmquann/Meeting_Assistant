@@ -1,6 +1,8 @@
 import os
 import logging
 import json
+import re, time
+from collections import deque
 from fastapi import FastAPI, Request, WebSocket
 from typing import Dict, Callable, Any
 from deepgram import DeepgramClient, LiveTranscriptionEvents
@@ -121,12 +123,17 @@ async def connect_to_deepgram(transcript_received_handler: Callable[[Any], None]
         # Use dict options for websocket client
         # IMPORTANT: set encoding/sample_rate to match your input stream
         options = {
-            "model": "nova-2-meeting",
+            "model": "nova-3",
             "smart_format": True,
             "punctuate": True,
-            "interim_results": False,
             "diarize": True,
             "interim_results": True,
+            "utterance_end_ms": 1000,
+            "vad_events": True,
+            "utterances": True,
+            # Time in milliseconds of silence to wait for before finalizing speech
+            "endpointing": 800,
+            "language": "vi"
             # Example for raw PCM 16k mono:
             # "encoding": "linear16",
             # "sample_rate": 16000,
