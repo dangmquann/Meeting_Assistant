@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Continuous Voice Streaming</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        .controls {
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        
+        .conversation {
+            flex: 1;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .user-message, .assistant-message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 15px;
+            max-width: 80%;
+        }
+        
+        .user-message {
+            background-color: #e3f2fd;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        
+        .assistant-message {
+            background-color: #f1f0f0;
+            align-self: flex-start;
+        }
+        
+        button {
+            padding: 8px 16px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .primary-btn {
+            background-color: #2196f3;
+            color: white;
+        }
+        
+        .warning-btn {
+            background-color: #ff9800;
+            color: white;
+        }
+        
+        .danger-btn {
+            background-color: #f44336;
+            color: white;
+        }
+        
+        .status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Continuous Voice Streaming</h1>
+        
+        <div class="controls">
+            <button id="connectBtn" class="primary-btn">Connect</button>
+            <button id="startBtn" class="primary-btn" disabled>Start Streaming</button>
+            <button id="pauseBtn" class="warning-btn" disabled>Pause</button>
+            <button id="disconnectBtn" class="danger-btn" disabled>Disconnect</button>
+            <div id="status" class="status">Disconnected</div>
+        </div>
+        
+        <div id="conversation" class="conversation">
+            <!-- Messages will appear here -->
+        </div>
+    </div>
+
+    <!-- Include required scripts -->
+    <script src="/static/js/pcm-processor.js"></script>
+    <script src="/static/js/live-media-manager.js"></script>
+    <script src="/static/js/continuous-streaming-client.js"></script>
+    
+    <script>
+        // Initialize client with WebSocket URL
+        const client = new ContinuousStreamingClient('ws://' + window.location.host + '/ws/live');
+        
+        // Setup audio output manager for playing responses
+        const audioOutputManager = new LiveAudioOutputManager();
+        
+        // Get UI elements
+        const connectBtn = document.getElementById('connectBtn');
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const statusEl = document.getElementById('status');
+        const conversationEl = document.getElementById('conversation');
+        
+        // Connect button click handler
+        connectBtn.addEventListener('click', async () => {
+            statusEl.textContent = 'Connecting...';
+            await client.connect();
+        });
+        
+        // Start streaming button click handler
+        startBtn.addEventListener('click', async () => {
+            statusEl.textContent = 'Starting stream...';
+            await client.startStreaming();
+            startBtn.disabled = true;
+            pauseBtn.disabled = false;
+        });
+        
+        // Pause button click handler
+        pauseBtn.addEventListener('click', () => {
+            client.pauseStreaming();
+            statusEl.textContent = 'Paused';
+            startBtn.disabled = false;
+            pauseBtn.disabled = true;
+        });
+        
+        // Disconnect button click handler
+        disconnectBtn.addEventListener('click', () => {
+            client.disconnect();
+            statusEl.textContent = 'Disconnected';
+            connectBtn.disabled = false;
+            startBtn.disabled = true;
+            pauseBtn.disabled = true;
+            disconnectBtn.disabled = true;
+        });
+        
+        // Setup event handlers
+        client.onConnected = () => {
+            statusEl.textContent = 'Connected';
+            connectBtn.disabled = true;
+            startBtn.disabled = false;
+            disconnectBtn.disabled = false;
+            addMessage('System', 'Connected to server. You can start streaming now.');
+        };
+        
+        client.onDisconnected = () => {
+            statusEl.textContent = 'Disconnected';
+            connectBtn.disabled = false;
+            startBtn.disabled = true;
+            pauseBtn.disabled = true;
+            disconnectBtn.disabled = true;
+        };
+        
+        client.onError = (error) => {
+            statusEl.textContent = 'Error: ' + error;
+            addMessage('System', 'Error: ' + error, 'error');
+        };
+        
+        client.onTranscript = (text, isUser) => {
+            if (isUser) {
+                addMessage('You', text, 'user');
+            } else {
+                addMessage('Assistant', text, 'assistant');
+            }
+        };
+        
+        client.onAudioChunk = (data) => {
+            audioOutputManager.playAudioChunk(data.chunk);
+        };
+        
+        // Helper function to add messages to the conversation
+        function addMessage(sender, text, type) {
+            const messageEl = document.createElement('div');
+            messageEl.className = type === 'user' ? 'user-message' : 'assistant-message';
+            if (type === 'error') messageEl.style.color = 'red';
+            
+            messageEl.innerHTML = `<strong>${sender}:</strong> ${text}`;
+            conversationEl.appendChild(messageEl);
+            conversationEl.scrollTop = conversationEl.scrollHeight;
+        }
+    </script>
+</body>
+</html>
