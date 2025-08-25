@@ -17,7 +17,7 @@ from google.genai import types
 from google.adk.sessions import DatabaseSessionService
 from fastapi import WebSocketDisconnect
 from modules.speech.live.agent import root_agent
-from V2_chat.models.responseModel import responseModel, insert_response
+from modules.history_database import responseModel, insert_response
 
 
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
