@@ -1,167 +1,39 @@
-# import logging
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-# from dotenv import load_dotenv
+from google.adk.agents import Agent
+from google.adk.tools import google_search  # Import the tool
 
-# from livekit.agents import (
-#     Agent,
-#     AgentSession,
-#     JobContext,
-#     JobProcess,
-#     RoomInputOptions,
-#     RoomOutputOptions,
-#     RunContext,
-#     WorkerOptions,
-#     cli,
-#     metrics,
-# )
-# from livekit.agents.llm import function_tool
-# from livekit.agents.voice import MetricsCollectedEvent
-# from livekit.plugins import deepgram, openai, silero
-# from livekit.plugins.turn_detector.multilingual import MultilingualModel
-
-# # uncomment to enable Krisp background voice/noise cancellation
-# # from livekit.plugins import noise_cancellation
-
-# logger = logging.getLogger("basic-agent")
-
-# load_dotenv()
-
-
-# class MyAgent(Agent):
-#     def __init__(self) -> None:
-#         super().__init__(
-#             instructions="Your name is Kelly. You would interact with users via voice."
-#             "with that in mind keep your responses concise and to the point."
-#             "You are curious and friendly, and have a sense of humor.",
-#         )
-
-#     async def on_enter(self):
-#         # when the agent is added to the session, it'll generate a reply
-#         # according to its instructions
-#         self.session.generate_reply()
-
-#     # all functions annotated with @function_tool will be passed to the LLM when this
-#     # agent is active
-#     @function_tool
-#     async def lookup_weather(
-#         self, context: RunContext, location: str, latitude: str, longitude: str
-#     ):
-#         """Called when the user asks for weather related information.
-#         Ensure the user's location (city or region) is provided.
-#         When given a location, please estimate the latitude and longitude of the location and
-#         do not ask the user for them.
-
-#         Args:
-#             location: The location they are asking for
-#             latitude: The latitude of the location, do not ask user for it
-#             longitude: The longitude of the location, do not ask user for it
-#         """
-
-#         logger.info(f"Looking up weather for {location}")
-
-#         return "sunny with a temperature of 70 degrees."
-
-
-# def prewarm(proc: JobProcess):
-#     proc.userdata["vad"] = silero.VAD.load()
-
-
-# async def entrypoint(ctx: JobContext):
-#     # each log entry will include these fields
-#     ctx.log_context_fields = {
-#         "room": ctx.room.name,
-#     }
-
-#     session = AgentSession(
-#         vad=ctx.proc.userdata["vad"],
-#         # any combination of STT, LLM, TTS, or realtime API can be used
-#         llm=openai.LLM(model="gpt-4o-mini"),
-#         stt=openai.STT(model="gpt-4o-transcribe"),
-#         tts=openai.TTS(model= "gpt-4o-mini-tts",voice="ash"),
-#         # use LiveKit's turn detection model
-#         turn_detection=MultilingualModel(),
-#     )
-
-#     # log metrics as they are emitted, and total usage after session is over
-#     usage_collector = metrics.UsageCollector()
-
-#     @session.on("metrics_collected")
-#     def _on_metrics_collected(ev: MetricsCollectedEvent):
-#         metrics.log_metrics(ev.metrics)
-#         usage_collector.collect(ev.metrics)
-
-#     async def log_usage():
-#         summary = usage_collector.get_summary()
-#         logger.info(f"Usage: {summary}")
-
-#     # shutdown callbacks are triggered when the session is over
-#     ctx.add_shutdown_callback(log_usage)
-
-#     await session.start(
-#         agent=MyAgent(),
-#         room=ctx.room,
-#         room_input_options=RoomInputOptions(
-#             audio_sample_rate=16000,  # or try 44100
-#             # uncomment to enable Krisp BVC noise cancellation
-#             # noise_cancellation=noise_cancellation.BVC(),
-#         ),
-#         room_output_options=RoomOutputOptions(transcription_enabled=True),
-#     )
-
-#     # join the room when agent is ready
-#     await ctx.connect()
-
-
-# if __name__ == "__main__":
-#     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
-
-from dotenv import load_dotenv
-
-from livekit import agents
-from livekit.agents import AgentSession, Agent, RoomInputOptions
-from livekit.plugins import (
-    openai,
-    cartesia,
-    deepgram,
-    noise_cancellation,
-    silero,
+root_agent = Agent(
+   # A unique name for the agent.
+   name="google_search_agent",
+   # The Large Language Model (LLM) that agent will use.
+    #model="gemini-2.0-flash-exp", # if this model does not work, try below
+   #model="gemini-2.0-flash-live-001",
+   model="gemini-2.5-flash-preview-native-audio-dialog",
+   # A short description of the agent's purpose.
+   description="Friendly, conversational voice assistant that answers questions using Google Search.",
+   # Instructions to set the agent's behavior.
+   instruction=(
+       "You are a friendly, conversational voice assistant. "
+       "Speak naturally and helpfully. Only use the google_search tool when necessary for factual information, "
+       "current events, or specific data that requires verification. For general knowledge, common questions, "
+       "or conversational responses, rely on your own knowledge without searching. "
+       "When you do use search results, mention that the information comes from a search. "
+       "Provide concise, clear responses. If you are unsure about something, "
+       "be transparent and offer to follow up with more details or ask a clarifying question."
+   ),
+   # Add google_search tool to perform grounding with Google search.
+   tools=[google_search],
 )
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
-
-load_dotenv()
-
-
-class Assistant(Agent):
-    def __init__(self) -> None:
-        super().__init__(instructions="Your name is Kelly. You are a helpful voice AI assistant. You are curious and friendly, and have a sense of humor.")
-
-
-async def entrypoint(ctx: agents.JobContext):
-    session = AgentSession(
-        stt=openai.STT(model="gpt-4o-transcribe"),
-        llm=openai.LLM(model="gpt-4o-mini"),
-        tts=openai.TTS(model= "gpt-4o-mini-tts",voice="ash"),
-        vad=silero.VAD.load(),
-        turn_detection=MultilingualModel(),
-    )
-
-    await session.start(
-        room=ctx.room,
-        agent=Assistant(),
-        room_input_options=RoomInputOptions(
-            # LiveKit Cloud enhanced noise cancellation
-            # - If self-hosting, omit this parameter
-            # - For telephony applications, use `BVCTelephony` for best results
-            noise_cancellation=noise_cancellation.BVC(), 
-        ),
-    )
-
-    await ctx.connect()
-
-    await session.generate_reply(
-        instructions="Greet the user and offer your assistance."
-    )
-
-
-if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))

@@ -5,3 +5,7 @@ __pycache__/
 # Ignore credential files in the payment directory
 credentials/*.p12
 credentials/*.json
+
+# Ignore mongo_data directory
+mongo_data/
+live_adk/
