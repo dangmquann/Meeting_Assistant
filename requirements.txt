@@ -22,7 +22,6 @@ soundfile
 deepgram-sdk==0.2.4
 docx
 pydantic==1.9.0
-# RAG
 pypdf==5.6.0
 PyMuPDF==1.26.1
 python-dotenv==1.1.0
@@ -34,3 +33,4 @@ deepeval==3.1.0
 av==15.0.0
 python-magic
 sounddevice==0.5.2
+pymongo==4.14.1

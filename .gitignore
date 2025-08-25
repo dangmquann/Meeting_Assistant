@@ -8,3 +8,4 @@ credentials/*.json
 
 # Ignore mongo_data directory
 mongo_data/
+live_adk/
