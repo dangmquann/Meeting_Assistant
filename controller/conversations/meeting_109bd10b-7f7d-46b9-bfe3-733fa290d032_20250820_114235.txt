@@ -1,0 +1,12 @@
+[11:41:18] Người dùng:
+ What are you doing?
+
+[11:41:22] Caimio:
+Oh, hello there! I'm doing my best to be a helpful voice assistant, ready to answer your questions and provide information. How can I help you today?
+
+[11:41:58] Người dùng:
+ <noise>
+
+[11:42:00] Caimio:
+Um, actually, my name is Gemini, and I was
+
