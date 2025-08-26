@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from pymongo import MongoClient
 from typing import List, Optional, Dict, Any, Literal
 from datetime import datetime
-from modules.utils import normalize_http_exception
+from controller.utils import normalize_http_exception
 from dotenv import load_dotenv
 load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")

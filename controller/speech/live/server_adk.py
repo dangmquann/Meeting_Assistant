@@ -16,8 +16,8 @@ from google.adk.agents.run_config import RunConfig
 from google.genai import types
 from google.adk.sessions import DatabaseSessionService
 from fastapi import WebSocketDisconnect
-from modules.speech.live.agent import root_agent
-from modules.history_database import responseModel, insert_response
+from controller.speech.live.agent import root_agent
+from controller.history_database import responseModel, insert_response
 
 
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")

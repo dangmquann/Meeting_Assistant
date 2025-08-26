@@ -6,10 +6,10 @@ import magic
 import logging
 from enum import Enum
 from typing import Optional, Tuple
-import json_repair
+# import json_repair
 from pydantic import BaseModel, Field
 from openai import OpenAI
-from faster_whisper import WhisperModel
+# from faster_whisper import WhisperModel
 from google.cloud import speech
 from google import genai
 from google.genai import types

@@ -34,3 +34,4 @@ av==15.0.0
 python-magic
 sounddevice==0.5.2
 pymongo==4.14.1
+minio==7.2.16

@@ -133,7 +133,7 @@ async def connect_to_deepgram(transcript_received_handler: Callable[[Any], None]
             "utterances": True,
             # Time in milliseconds of silence to wait for before finalizing speech
             "endpointing": 800,
-            "language": "vi"
+            # "language": "vi"
             # Example for raw PCM 16k mono:
             # "encoding": "linear16",
             # "sample_rate": 16000,

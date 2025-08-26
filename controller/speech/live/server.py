@@ -30,7 +30,7 @@ from google.genai.types import (
     HttpOptions
 )
 from pathlib import Path
-from modules.speech.audio_format import convert_to_raw_pcm
+from controller.speech.audio_format import convert_to_raw_pcm
 # from dotenv import load_dotenv
 # load_dotenv()
 

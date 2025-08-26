@@ -1,0 +1,12 @@
+[14:06:41] Người dùng:
+ Hello. Can you hear me?
+
+[14:06:42] Caimio:
+Yes, I can hear you loud and clear. How can I help you today?
+
+[14:07:47] Người dùng:
+ mở rồi ạ.
+
+[14:07:53] Caimio:
+Oh, I apologize for the confusion, but my name is actually Gemini, a large language model created by Google. How can I help you today?
+

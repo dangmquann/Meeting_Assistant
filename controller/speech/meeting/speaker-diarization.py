@@ -100,7 +100,7 @@ def export_transcript(response_data, output_file):
 
 def main():
     try:
-        audio_file = "/home/quandm/quandm/agent-be/premier_broken-phone.mp3"  # Path to your audio file
+        audio_file = "/home/quandm/quandm/meeting_assistant/premier_broken-phone.mp3"  # Path to your audio file
         response = speaker_diarization(audio_file)
         print(f"response: {response}\n\n")
         export_transcript(response.to_dict(), "./transcript.txt")
