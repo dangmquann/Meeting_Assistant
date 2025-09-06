@@ -1,0 +1,6 @@
+datalake:
+  endpoint: localhost:9000
+  bucket_name: meeting-assistant
+  folder_name: pump
+  access_key: minio_access_key
+  secret_key: minio_secret_key

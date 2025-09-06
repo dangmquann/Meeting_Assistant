@@ -2,11 +2,14 @@ import os
 import logging
 import json
 import re, time
+import uuid
+from datetime import datetime
 from collections import deque
 from fastapi import FastAPI, Request, WebSocket
 from typing import Dict, Callable, Any
 from deepgram import DeepgramClient, LiveTranscriptionEvents
 from dotenv import load_dotenv
+from controller.history_database import insert_response, responseModel
 
 load_dotenv()
 
@@ -94,6 +97,38 @@ async def process_audio(fast_socket: WebSocket):
                 'start': start_ts,
                 'end': end_ts
             })
+
+            # Save transcrip to database
+            try:
+                # Generatre unique IDs for the response
+                response_id = str(uuid.uuid4())
+
+                 # Create session ID based on date if not provided (you might want to use an actual session ID)
+                session_id = getattr(fast_socket, "session_id", 
+                                   f"meeting_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                
+                # Format as markdown for consistency
+                markdown_content = f"**Speaker {speaker}** [{start_ts} - {end_ts}]:\n{transcript}"
+
+                # Create response model 
+                response = responseModel(
+                    responseId=response_id,
+                    modelId="deepgram-live",
+                    sender=f"speaker_{speaker}",
+                    message=transcript,
+                    session=session_id,
+                    parentResponseId=None, # TODO: link to previous if needed
+                    files=[],
+                    createdAt=datetime.now().isoformat(),
+                    citations=None,
+                    markdown_content=markdown_content
+                )
+
+                # Insert response into database
+                await insert_response(response)
+
+            except Exception as e:
+                logger.error(f"Error saving transcript to database: {e}")
 
     deepgram_socket = await connect_to_deepgram(get_transcript)
     return deepgram_socket
