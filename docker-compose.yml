@@ -12,11 +12,12 @@ services:
     volumes:
       - ./mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+
   
   trino:
     image: "trinodb/trino:410"
@@ -38,6 +39,12 @@ services:
       POSTGRES_USER: hive
       POSTGRES_PASSWORD: hive
       POSTGRES_DB: metastore
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive -d metastore"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
   
   offline-fs:
     container_name: datalake-offline-fs
@@ -105,6 +112,8 @@ services:
       retries: 3
       start_period: 30s
 
+
+  # === Airflow ===
   airflow:
     build: 
       context: ./airflow
@@ -120,8 +129,8 @@ services:
       - AIRFLOW_HOME=/opt/airflow
       - PYTHONPATH=/opt/airflow/src
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://quanmd:quanmd@offline-fs:5432/k6
-      - OPENSEARCH_HOST=http://opensearch:9200
-      - OPENSEARCH__HOST=http://opensearch:9200
+      # - OPENSEARCH_HOST=http://opensearch:9200
+      # - OPENSEARCH__HOST=http://opensearch:9200
       # - OLLAMA_HOST=http://ollama:11434
     volumes:
       - ./airflow/dags:/opt/airflow/dags
@@ -129,9 +138,9 @@ services:
       - ./airflow/plugins:/opt/airflow/plugins
       - ./src:/opt/airflow/src
     ports:
-      - "8080:8080"
+      - "9090:9090"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
       interval: 30s
       timeout: 10s
       retries: 3

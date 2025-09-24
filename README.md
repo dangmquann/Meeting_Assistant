@@ -4,7 +4,7 @@
 
 ## Overview
 Meeting Assistant is a real‑time meeting intelligence platform providing live speech transcription, speaker diarization, AI summaries, action items, sentiment analysis, topic segmentation, and unified analytical querying across structured + unstructured meeting data.
-
+![Architecture Meeting Assistant](./images/architecture.png)
 ## Features
 - Live Speech-to-Text (browser microphone → WebSocket)
 - Speaker Diarization (who spoke when)

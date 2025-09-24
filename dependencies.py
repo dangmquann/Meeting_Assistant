@@ -6,7 +6,7 @@ from deepgram import DeepgramClient
 
 async def check_mongodb_health() -> Tuple[str, Optional[str]]:
     try:
-        mongodb_uri = os.getenv("MONGODB_URI", "mongodb://quanmd:quanmd@mongodb:27017/")
+        mongodb_uri = os.getenv("MONGO_URI", "mongodb://quanmd:quanmd@mongodb:27017/")
         client = pymongo.MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')
         return "healthy", "Connected successfully"
