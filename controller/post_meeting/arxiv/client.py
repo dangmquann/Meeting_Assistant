@@ -24,7 +24,7 @@ class ArxivClient:
     """Client for fetching papers from arXiv API."""
     def __init__(self, settings: ArxivSettings):
         self._settings = settings
-        self._last_request_time = Optional[float] = None
+        self._last_request_time: Optional[float] = None
     
     @cached_property
     def pdf_cache_dir(self) -> Path:
@@ -130,13 +130,13 @@ class ArxivClient:
             return paper
         except httpx.TimeoutException as e:
             logger.error(f"Timeout error when fetching papers from arXiv: {e}")
-            return []
-        except httpx.HTTPError as e:
+            raise ArxivAPITimeoutError(f"arXiv API request timed out: {e}")
+        except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error when fetching papers from arXiv: {e}")
-            return []
+            raise ArxivAPIException(f"arXiv API returned error {e.response.status_code}: {e}")
         except Exception as e:
             logger.error(f"Unexpected error when fetching papers from arXiv: {e}")
-            return []
+            raise ArxivAPIException(f"Unexpected error fetching papers from arXiv: {e}")
 
     async def fetch_papers_with_query(
         self,
@@ -207,13 +207,13 @@ class ArxivClient:
             return paper
         except httpx.TimeoutException as e:
             logger.error(f"Timeout error when fetching papers from arXiv: {e}")
-            return []
-        except httpx.HTTPError as e:
+            raise ArxivAPITimeoutError(f"arXiv API request timed out: {e}")
+        except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error when fetching papers from arXiv: {e}")
-            return []
+            raise ArxivAPIException(f"arXiv API returned error {e.response.status_code}: {e}")
         except Exception as e:
             logger.error(f"Unexpected error when fetching papers from arXiv: {e}")
-            return []
+            raise ArxivAPIException(f"Unexpected error fetching papers from arXiv: {e}")
 
     async def fetch_paper_by_id(self, arxiv_id: str) -> Optional[ArxivPaper]:
         """
@@ -252,15 +252,15 @@ class ArxivClient:
                 return None
         except httpx.TimeoutException as e:
             logger.error(f"Timeout error when fetching paper {arxiv_id} from arXiv: {e}")
-            return None
-        except httpx.HTTPError as e:
+            raise ArxivAPITimeoutError(f"arXiv API request timed out: {e}")
+        except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error when fetching paper {arxiv_id} from arXiv: {e}")
-            return None
+            raise ArxivAPIException(f"arXiv API returned error {e.response.status_code}: {e}")
         except Exception as e:
             logger.error(f"Unexpected error when fetching paper {arxiv_id} from arXiv: {e}")
-            return None
+            raise ArxivAPIException(f"Unexpected error fetching paper {arxiv_id}: {e}")
         
-    async def _parse_response(self, xml_data: str) -> List[ArxivPaper]:
+    def _parse_response(self, xml_data: str) -> List[ArxivPaper]:
         """Parse XML response from arXiv API into list of ArxivPaper objects."""
         """
         Parse arXiv API XML response into ArxivPaper objects.
