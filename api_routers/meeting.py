@@ -13,7 +13,6 @@ from typing import Dict, Callable, Any
 from dotenv import load_dotenv
 from starlette.websockets import WebSocketDisconnect
 
-from deepgram import DeepgramClient, LiveTranscriptionEvents
 from controller.speech.meeting.meeting_minutes import process_audio
 from controller.speech.live.server import gemini_live_stream, GeminiLiveSession
 from controller.speech.audio_format import save_audio_buffer_as_wav, convert_to_raw_pcm

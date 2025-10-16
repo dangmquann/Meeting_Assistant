@@ -1,22 +1,83 @@
-import os
-import logging
+import asyncio
 import json
-import re, time
-import uuid
-from datetime import datetime
-from collections import deque
-from fastapi import FastAPI, Request, WebSocket
-from typing import Dict, Callable, Any
-from deepgram import DeepgramClient, LiveTranscriptionEvents
+import logging
+import os
+from contextlib import suppress
+from typing import Any, Callable
+
+from fastapi import WebSocket
+from deepgram import AsyncDeepgramClient
+from deepgram.core.events import EventType
+from deepgram.extensions.types.sockets import ListenV1ControlMessage, ListenV1ResultsEvent
 from dotenv import load_dotenv
-from controller.history_database import insert_response, responseModel
+# from controller.history_database import insert_response, responseModel
 
 load_dotenv()
 
-dg_client = DeepgramClient(api_key=os.getenv('DEEPGRAM_API_KEY', ''))
+dg_client = AsyncDeepgramClient(api_key=os.getenv('DEEPGRAM_API_KEY', ''))
 
-logger = logging.getLogger("deepgram")
+logger = logging.getLogger("meeting_assistant")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logger.addHandler(handler)
 logger.setLevel(logging.INFO)
+logger.propagate = False
+
+
+class DeepgramSocketWrapper:
+    def __init__(self, *, context_manager, socket, listener_task: asyncio.Task):
+        self._context_manager = context_manager
+        self._socket = socket
+        self._listener_task = listener_task
+        self._closed = False
+        self._transcript = ""
+        listener_task.add_done_callback(self._on_listener_done)
+
+    @staticmethod
+    def _on_listener_done(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            logger.error("Deepgram listener exited with error: %s", exc)
+
+    async def send(self, data: bytes) -> None:
+        if self._closed:
+            return
+        await self._socket.send_media(data)
+
+    async def finalize(self) -> None:
+        if self._closed:
+            return
+        try:
+            await self._socket.send_control(ListenV1ControlMessage(type="Finalize"))
+        except Exception as error:
+            logger.debug("Deepgram finalize failed: %s", error)
+
+    async def finish(self) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            try:
+                await self._context_manager.__aexit__(None, None, None)
+            except Exception as error:
+                logger.debug("Deepgram socket close error: %s", error)
+        finally:
+            if self._listener_task:
+                try:
+                    await asyncio.wait_for(self._listener_task, timeout=1)
+                except asyncio.TimeoutError:
+                    self._listener_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await self._listener_task
+                except asyncio.CancelledError:
+                    pass
+
 
 def format_timestamp(seconds):
     """Format seconds to HH:MM:SS.mmm"""
@@ -28,9 +89,10 @@ def format_timestamp(seconds):
 
 async def process_audio(fast_socket: WebSocket):
     async def get_transcript(event: Any) -> None:
-        # Log raw JSON if available
         try:
-            if hasattr(event, "to_json"):
+            if isinstance(event, ListenV1ResultsEvent):
+                raw = event.json()
+            elif hasattr(event, "to_json"):
                 raw = event.to_json()
             elif hasattr(event, "to_dict"):
                 raw = json.dumps(event.to_dict(), ensure_ascii=False)
@@ -50,134 +112,205 @@ async def process_audio(fast_socket: WebSocket):
         transcript = ''
         words = []
         is_final = False
+        speech_final = False
+        start_seconds = None
+        end_seconds = None
+        channel_index = None
+        confidence = None
 
-        # SDK v3 typed object (LiveResultResponse)
-        if hasattr(event, "channel"):
+        if isinstance(event, ListenV1ResultsEvent):
+            channel_index = (event.channel_index or [None])[0]
+            alt0 = event.channel.alternatives[0] if event.channel.alternatives else None
+            if alt0:
+                transcript = getattr(alt0, "transcript", "") or ""
+                words = list(getattr(alt0, "words", []) or [])
+                confidence = getattr(alt0, "confidence", None)
+            is_final = bool(getattr(event, "is_final", False) or getattr(event, "speech_final", False))
+            start_seconds = getattr(event, "start", None)
+            duration = getattr(event, "duration", None)
+            if start_seconds is not None and duration is not None:
+                end_seconds = start_seconds + duration
+        elif hasattr(event, "channel"):
             try:
                 alt0 = (event.channel.alternatives or [None])[0]
                 if alt0:
                     transcript = getattr(alt0, "transcript", "") or ""
                     words = getattr(alt0, "words", []) or []
+                    confidence = getattr(alt0, "confidence", None)
                 is_final = bool(getattr(event, "is_final", False))
             except Exception:
                 pass
-        # Dict payload
         elif isinstance(event, dict) and 'channel' in event:
             alt = (event.get('channel', {}).get('alternatives') or [{}])[0]
             transcript = alt.get('transcript', '') or ''
             words = alt.get('words', []) or []
-            is_final = bool(event.get('is_final', False))
+            is_final = event.get('is_final', False)
+            speech_final = event.get('speech_final', False)
+            channel_index = (event.get('channel_index') or [None])[0]
+            start_seconds = event.get('start')
+            duration = event.get('duration')
+            if start_seconds is not None and duration is not None:
+                end_seconds = start_seconds + duration
 
-        if transcript and is_final:
-            # Majority speaker from word-level diarization
-            speaker = 'unknown'
-            counts = {}
-            for w in words:
-                # words can be dicts or typed objects
-                s = w.get('speaker') if isinstance(w, dict) else getattr(w, 'speaker', None)
-                if s is not None:
-                    counts[s] = counts.get(s, 0) + 1
-            if counts:
-                speaker = max(counts, key=counts.get)
+        if not transcript:
+            return
 
-            if words:
-                w0 = words[0]
-                wN = words[-1]
-                start_v = w0.get('start') if isinstance(w0, dict) else getattr(w0, 'start', 0)
-                end_v = wN.get('end') if isinstance(wN, dict) else getattr(wN, 'end', 0)
-                start_ts = format_timestamp(start_v or 0)
-                end_ts = format_timestamp(end_v or 0)
-            else:
-                start_ts = format_timestamp(0)
-                end_ts = format_timestamp(0)
+        # Majority speaker from word-level diarization
+        speaker = 'unknown'
+        counts = {}
+        for w in words:
+            # words can be dicts or typed objects
+            s = w.get('speaker') if isinstance(w, dict) else getattr(w, 'speaker', None)
+            if s is not None:
+                counts[s] = counts.get(s, 0) + 1
+        if counts:
+            speaker = max(counts, key=counts.get)
 
-            await fast_socket.send_json({
-                'speaker': speaker,
-                'transcript': transcript,
-                'start': start_ts,
-                'end': end_ts
-            })
+        if words:
+            w0 = words[0]
+            wN = words[-1]
+            start_v = w0.get('start') if isinstance(w0, dict) else getattr(w0, 'start', None)
+            end_v = wN.get('end') if isinstance(wN, dict) else getattr(wN, 'end', None)
+            if start_v is not None:
+                start_seconds = start_v
+            if end_v is not None:
+                end_seconds = end_v
 
-            # Save transcrip to database
-            try:
-                # Generatre unique IDs for the response
-                response_id = str(uuid.uuid4())
+        if start_seconds is None:
+            start_seconds = 0.0
+        if end_seconds is None:
+            end_seconds = start_seconds
 
-                 # Create session ID based on date if not provided (you might want to use an actual session ID)
-                session_id = getattr(fast_socket, "session_id", 
-                                   f"meeting_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-                
-                # Format as markdown for consistency
-                markdown_content = f"**Speaker {speaker}** [{start_ts} - {end_ts}]:\n{transcript}"
+        start_ts = format_timestamp(start_seconds)
+        end_ts = format_timestamp(end_seconds)
+        result_id = f"{channel_index or 0}-{int(start_seconds * 1000)}"
 
-                # Create response model 
-                response = responseModel(
-                    responseId=response_id,
-                    modelId="deepgram-live",
-                    sender=f"speaker_{speaker}",
-                    message=transcript,
-                    session=session_id,
-                    parentResponseId=None, # TODO: link to previous if needed
-                    files=[],
-                    createdAt=datetime.now().isoformat(),
-                    citations=None,
-                    markdown_content=markdown_content
-                )
+        # Tích lũy transcript khi is_final = True
+        if is_final and transcript:
+            # Lưu transcript vào đối tượng socket wrapper để sau này truy xuất
+            if not hasattr(deepgram_socket, "_transcript"):
+                deepgram_socket._transcript = ""
+            # Thêm transcript vào chuỗi đã tích lũy, thêm dấu cách để ngăn cách các đoạn
+            deepgram_socket._transcript += ((" " + transcript) if deepgram_socket._transcript else transcript)
+            logger.info(f"Final transcript accumulated: {deepgram_socket._transcript}")
+        
+        payload = {
+            'result_id': result_id,
+            'speaker': speaker,
+            'transcript': transcript,
+            'start': start_ts,
+            'end': end_ts,
+            'is_final': is_final,
+            'speech_final': speech_final,
+        }
+        if confidence is not None:
+            payload['confidence'] = float(confidence)
 
-                # Insert response into database
-                await insert_response(response)
+        await fast_socket.send_json(payload)
+        # # Save transcrip to database
+        # try:
+        #     # Generatre unique IDs for the response
+        #     response_id = str(uuid.uuid4())
 
-            except Exception as e:
-                logger.error(f"Error saving transcript to database: {e}")
+        #      # Create session ID based on date if not provided (you might want to use an actual session ID)
+        #     session_id = getattr(fast_socket, "session_id", 
+        #                        f"meeting_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+            
+        #     # Format as markdown for consistency
+        #     markdown_content = f"**Speaker {speaker}** [{start_ts} - {end_ts}]:\n{transcript}"
+
+        #     # Create response model 
+        #     response = responseModel(
+        #         responseId=response_id,
+        #         modelId="deepgram-live",
+        #         sender=f"speaker_{speaker}",
+        #         message=transcript,
+        #         session=session_id,
+        #         parentResponseId=None, # TODO: link to previous if needed
+        #         files=[],
+        #         createdAt=datetime.now().isoformat(),
+        #         citations=None,
+        #         markdown_content=markdown_content
+        #     )
+
+        #     # Insert response into database
+        #     await insert_response(response)
+
+        # except Exception as e:
+        #     logger.error(f"Error saving transcript to database: {e}")
 
     deepgram_socket = await connect_to_deepgram(get_transcript)
     return deepgram_socket
 
 async def connect_to_deepgram(transcript_received_handler: Callable[[Any], None]):
+    language = (os.getenv("DEEPGRAM_LANGUAGE") or "vi").strip()
+    logger.info("====== Connecting to Deepgram with language: %s ======", language)
+    if not language:
+        language = None
+
+    default_model = "nova-2-general" if language and language.lower() != "en" else "nova-2"
+    model = (os.getenv("DEEPGRAM_MODEL") or default_model).strip() or default_model
+
+    options = {
+        "model": model,
+        "smart_format": True,
+        "punctuate": True,
+        "diarize": False,
+        "interim_results": True,
+        "utterance_end_ms": 1000,
+        "vad_events": True,
+        "endpointing": 800,
+    }
+
+    if language:
+        options["language"] = language
+    # Example for raw PCM 16k mono:
+    # options["encoding"] = "linear16"
+    # options["sample_rate"] = 16000
+    # If your client sends WebM/Opus (typical from MediaRecorder):
+    # options["encoding"] = "opus"
+    # options["sample_rate"] = 48000
+
+    socket_context = dg_client.listen.v1.connect(**options)
+
     try:
-        # Async WebSocket client v1
-        dg_ws = dg_client.listen.asyncwebsocket.v("1")
+        socket = await socket_context.__aenter__()
+    except Exception as exc:
+        with suppress(Exception):
+            await socket_context.__aexit__(type(exc), exc, None)
+        raise Exception(f'Could not open socket: {exc}') from exc
 
-        # Handlers have signature: handler(client, ..., named args)
-        async def on_transcript(_client, result=None, **kwargs):
-            if result is None:
-                # fallback if SDK passes differently
-                result = kwargs.get("result") or kwargs
-            await transcript_received_handler(result)
+    async def on_message(message: Any):
+        if isinstance(message, ListenV1ResultsEvent):
+            await transcript_received_handler(message)
+        else:
+            logger.debug("Deepgram event: %s", getattr(message, "type", type(message)))
 
-        async def on_close(_client, close=None, **kwargs):
-            logger.info(f'Deepgram WS closed: {close}')
+    async def on_close(_):
+        logger.info('Deepgram WS closed')
 
-        async def on_error(_client, error=None, **kwargs):
-            logger.error(f'Deepgram WS error: {error}')
+    async def on_error(error):
+        logger.error('Deepgram WS error: %s', error)
 
-        dg_ws.on(LiveTranscriptionEvents.Transcript, on_transcript)
-        dg_ws.on(LiveTranscriptionEvents.Close, on_close)
-        dg_ws.on(LiveTranscriptionEvents.Error, on_error)
+    async def on_open(_):
+        logger.info('Deepgram WS opened')
 
-        # Use dict options for websocket client
-        # IMPORTANT: set encoding/sample_rate to match your input stream
-        options = {
-            "model": "nova-3",
-            "smart_format": True,
-            "punctuate": True,
-            "diarize": True,
-            "interim_results": True,
-            "utterance_end_ms": 1000,
-            "vad_events": True,
-            "utterances": True,
-            # Time in milliseconds of silence to wait for before finalizing speech
-            "endpointing": 800,
-            # "language": "vi"
-            # Example for raw PCM 16k mono:
-            # "encoding": "linear16",
-            # "sample_rate": 16000,
-            # If your client sends WebM/Opus (typical from MediaRecorder):
-            # "encoding": "opus",
-            # "sample_rate": 48000,
-        }
+    socket.on(EventType.OPEN, on_open)
+    socket.on(EventType.MESSAGE, on_message)
+    socket.on(EventType.CLOSE, on_close)
+    socket.on(EventType.ERROR, on_error)
 
-        await dg_ws.start(options)
-        return dg_ws
-    except Exception as e:
-        raise Exception(f'Could not open socket: {e}')
+    try:
+        listener_task = asyncio.create_task(socket.start_listening())
+    except Exception as exc:
+        with suppress(Exception):
+            await socket_context.__aexit__(type(exc), exc, None)
+        raise
+
+    return DeepgramSocketWrapper(
+        context_manager=socket_context,
+        socket=socket,
+        listener_task=listener_task,
+    )
+
+
