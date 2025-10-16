@@ -1,0 +1,41 @@
+version: '3.9'
+
+# Workflow Orchestration
+# Airflow: DAG-based workflow management
+
+services:
+  airflow:
+    build: 
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: rag-airflow
+    # user: "50000:0"  # Uncomment for WSL/Ubuntu, comment out for Mac
+    env_file:
+      - .env
+    environment:
+      - AIRFLOW_HOME=/opt/airflow
+      - PYTHONPATH=/opt/airflow/src
+      - POSTGRES_DATABASE_URL=postgresql+psycopg2://quanmd:quanmd@offline-fs:5432/k6
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./src:/opt/airflow/src
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - rag-network
+
+volumes:
+  airflow_logs:
+
+networks:
+  rag-network:
+    external: true
+
