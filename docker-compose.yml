@@ -1,5 +1,10 @@
 version: '3.9'
 
+# Core Services - Always needed for basic functionality
+# MongoDB: Main application database
+# PostgreSQL (offline-fs): Operational database for transcripts
+# MinIO: Object storage
+
 services:
   mongodb:
     image: mongo:6.0
@@ -10,42 +15,16 @@ services:
       MONGO_INITDB_ROOT_USERNAME: quanmd
       MONGO_INITDB_ROOT_PASSWORD: quanmd
     volumes:
-      - ./mongo_data:/data/db
+      - mongo_data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - rag-network
 
-  
-  trino:
-    image: "trinodb/trino:410"
-    container_name: datalake-trino
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./trino/etc:/usr/lib/trino/etc:ro # Trino configuration files
-      - ./trino/catalog:/etc/trino/catalog 
-    depends_on:
-      - hive-metastore
-  
-  metastore_db:
-    container_name: datalake-metastore-db
-    image: postgres:11
-    ports:
-      - '5433:5432'
-    environment:
-      POSTGRES_USER: hive
-      POSTGRES_PASSWORD: hive
-      POSTGRES_DB: metastore
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hive -d metastore"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-  
   offline-fs:
     container_name: datalake-offline-fs
     image: postgres:11
@@ -61,37 +40,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-
-  hive-metastore:
-    container_name: datalake-hive-metastore
-    image: 'starburstdata/hive:3.1.2-e.18'
-    ports:
-      - '9083:9083'
-    environment:
-      HIVE_METASTORE_DRIVER: org.postgresql.Driver
-      HIVE_METASTORE_JDBC_URL: jdbc:postgresql://metastore_db:5432/metastore
-      HIVE_METASTORE_USER: hive
-      HIVE_METASTORE_PASSWORD: hive
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: minio_access_key
-      S3_SECRET_KEY: minio_secret_key
-      S3_PATH_STYLE_ACCESS: "true"
-      REGION: ""
-      GOOGLE_CLOUD_KEY_FILE_PATH: ""
-      AZURE_ADL_CLIENT_ID: ""
-      AZURE_ADL_CREDENTIAL: ""
-      AZURE_ADL_REFRESH_URL: ""
-      AZURE_ABFS_STORAGE_ACCOUNT: ""
-      AZURE_ABFS_ACCESS_KEY: ""
-      AZURE_WASB_STORAGE_ACCOUNT: ""
-      AZURE_ABFS_OAUTH: ""
-      AZURE_ABFS_OAUTH_TOKEN_PROVIDER: ""
-      AZURE_ABFS_OAUTH_CLIENT_ID: ""
-      AZURE_ABFS_OAUTH_SECRET: ""
-      AZURE_ABFS_OAUTH_ENDPOINT: ""
-      AZURE_WASB_ACCESS_KEY: ""
-    depends_on:
-      - metastore_db
+    networks:
+      - rag-network
 
   minio:
     image: minio/minio
@@ -111,49 +61,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-
-
-  # === Airflow ===
-  airflow:
-    build: 
-      context: ./airflow
-      dockerfile: Dockerfile
-    container_name: rag-airflow
-    # user: "50000:0"  # Uncomment for WSL/Ubuntu, comment out for Mac
-    depends_on:
-      offline-fs:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      - AIRFLOW_HOME=/opt/airflow
-      - PYTHONPATH=/opt/airflow/src
-      - POSTGRES_DATABASE_URL=postgresql+psycopg2://quanmd:quanmd@offline-fs:5432/k6
-      # - OPENSEARCH_HOST=http://opensearch:9200
-      # - OPENSEARCH__HOST=http://opensearch:9200
-      # - OLLAMA_HOST=http://ollama:11434
-    volumes:
-      - ./airflow/dags:/opt/airflow/dags
-      - airflow_logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./src:/opt/airflow/src
-    ports:
-      - "9090:9090"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
     networks:
       - rag-network
 
 volumes:
-  minio_storage:
   mongo_data:
-  airflow_logs:
+  minio_storage:
 
 networks:
   rag-network:
     driver: bridge
-

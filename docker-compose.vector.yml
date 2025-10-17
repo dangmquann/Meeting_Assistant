@@ -1,0 +1,33 @@
+version: '3.9'
+
+# Vector Database for Semantic Search
+# Qdrant: Vector similarity search engine
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: meeting-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+      QDRANT__SERVICE__HTTP_PORT: 6333
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - rag-network
+
+volumes:
+  qdrant_storage:
+
+networks:
+  rag-network:
+    external: true
+

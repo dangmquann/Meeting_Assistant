@@ -1,0 +1,137 @@
+version: '3.9'
+
+# Stream Processing Engines
+# Flink: Real-time stream processing
+# Spark: Unified batch and stream processing
+
+services:
+  # === Flink Cluster ===
+  flink-jobmanager:
+    image: flink:1.18.0-scala_2.12-java11
+    container_name: meeting-flink-jobmanager
+    ports:
+      - "8082:8081"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+        parallelism.default: 2
+        state.backend: filesystem
+        state.checkpoints.dir: file:///tmp/flink-checkpoints
+        state.savepoints.dir: file:///tmp/flink-savepoints
+        execution.checkpointing.interval: 60000
+        execution.checkpointing.min-pause: 10000
+    volumes:
+      - flink_checkpoints:/tmp/flink-checkpoints
+      - flink_savepoints:/tmp/flink-savepoints
+      - ./flink_jobs:/opt/flink/jobs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - rag-network
+
+  flink-taskmanager:
+    image: flink:1.18.0-scala_2.12-java11
+    container_name: meeting-flink-taskmanager
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+        taskmanager.memory.process.size: 1728m
+    volumes:
+      - flink_checkpoints:/tmp/flink-checkpoints
+      - flink_savepoints:/tmp/flink-savepoints
+      - ./flink_jobs:/opt/flink/jobs
+    networks:
+      - rag-network
+
+  # === Spark Cluster ===
+  spark-master:
+    image: bitnami/spark:3.5.0
+    container_name: meeting-spark-master
+    ports:
+      - "8083:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_MASTER_WEBUI_PORT=8080
+    volumes:
+      - spark_master_data:/bitnami/spark
+      - ./spark_jobs:/opt/spark/jobs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - rag-network
+
+  spark-worker-1:
+    image: bitnami/spark:3.5.0
+    container_name: meeting-spark-worker-1
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - spark_worker_1_data:/bitnami/spark
+      - ./spark_jobs:/opt/spark/jobs
+    networks:
+      - rag-network
+
+  spark-worker-2:
+    image: bitnami/spark:3.5.0
+    container_name: meeting-spark-worker-2
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - spark_worker_2_data:/bitnami/spark
+      - ./spark_jobs:/opt/spark/jobs
+    networks:
+      - rag-network
+
+volumes:
+  flink_checkpoints:
+  flink_savepoints:
+  spark_master_data:
+  spark_worker_1_data:
+  spark_worker_2_data:
+
+networks:
+  rag-network:
+    external: true
+

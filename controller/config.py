@@ -64,3 +64,39 @@ class PDFParserSettings(BaseConfigSettings):
     max_file_size_mb: int = 20
     do_ocr: bool = False
     do_table_structure: bool = True
+
+class Settings(BaseConfigSettings):
+    app_version: str = "0.1.0"
+    debug: bool = True
+    environment: Literal["development", "staging", "production"] = "development"
+    service_name: str = "rag-api"
+
+    postgres_database_url: str = "postgresql://quandmd:quanmd@localhost:5432/k6"
+    postgres_echo_sql: bool = False
+    postgres_pool_size: int = 20
+    postgres_max_overflow: int = 0
+
+    # ollama_host: str = "http://localhost:11434"
+    # ollama_model: str = "llama3.2:1b"
+    # ollama_timeout: int = 300
+
+    # Jina AI embeddings configuration
+    jina_api_key: str = ""
+
+    arxiv: ArxivSettings = Field(default_factory=ArxivSettings)
+    pdf_parser: PDFParserSettings = Field(default_factory=PDFParserSettings)
+    # chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
+    # opensearch: OpenSearchSettings = Field(default_factory=OpenSearchSettings)
+    # langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
+    # redis: RedisSettings = Field(default_factory=RedisSettings)
+
+    @field_validator("postgres_database_url")
+    @classmethod
+    def validate_database_url(cls, v: str) -> str:
+        if not (v.startswith("postgresql://") or v.startswith("postgresql+psycopg2://")):
+            raise ValueError("Database URL must start with 'postgresql://' or 'postgresql+psycopg2://'")
+        return v
+
+
+def get_settings() -> Settings:
+    return Settings()
